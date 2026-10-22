@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.24-alpine AS builder
+FROM golang:1.27.3-alpine3.24 AS builder
 
 WORKDIR /build
 
@@ -18,11 +18,11 @@ RUN CGO_ENABLED=0 go build -o ngrokd ./cmd/ngrokd
 RUN CGO_ENABLED=0 go build -o ngrokctl ./cmd/ngrokctl
 
 # Runtime stage
-FROM alpine:latest
+FROM alpine:3.24
 
 # Install runtime dependencies
 RUN apk add --no-cache \
-    ca-certificates \
+    ca-certificates=20261020-r0 \
     curl \
     iproute2 \
     iptables \

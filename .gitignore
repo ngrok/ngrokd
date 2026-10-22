@@ -85,3 +85,5 @@ TEST_MANUAL.md
 VIRTUAL_INTERFACE.md
 research.md
 dist/
+!pkg/forwarder/certs/
+!pkg/forwarder/certs/ngrok-ca.pem
