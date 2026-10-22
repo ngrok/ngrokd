@@ -1,6 +1,10 @@
 package forwarder
 
 import (
+	"bytes"
+	"crypto/x509"
+	"encoding/hex"
+	"encoding/pem"
 	"io"
 	"net"
 	"testing"
@@ -96,4 +100,31 @@ func TestRawProxy(t *testing.T) {
 			t.Fatal("rawProxy did not return in time")
 		}
 	})
+}
+
+// ingressIssuerKeyID is the Authority Key Identifier on the
+// kubernetes-binding-ingress.ngrok.io certificate.
+const ingressIssuerKeyID = "9e3b9d1cc768e4febd8e383774c2318b469418c8"
+
+func TestEmbeddedNgrokCAs(t *testing.T) {
+	want, _ := hex.DecodeString(ingressIssuerKeyID)
+	rest := embeddedNgrokCAs
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			t.Fatalf("embedded CA does not parse: %v", err)
+		}
+		if bytes.Equal(cert.SubjectKeyId, want) {
+			if !cert.IsCA {
+				t.Fatalf("embedded cert %q is not a CA", cert.Subject)
+			}
+			return
+		}
+	}
+	t.Fatalf("certs/ngrok-ca.pem has no CA with key ID %s, the issuer of the ngrok ingress certificate", ingressIssuerKeyID)
 }

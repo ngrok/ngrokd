@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	_ "embed"
 	"fmt"
 	"net"
 	"net/url"
@@ -41,6 +42,13 @@ type Config struct {
 	Logger logr.Logger
 }
 
+// embeddedNgrokCAs holds the CA certificates that sign ngrok's ingress
+// certificate. It is compiled in so every install can verify the ingress
+// without extra setup.
+//
+//go:embed certs/ngrok-ca.pem
+var embeddedNgrokCAs []byte
+
 // BoundEndpoint represents a kubernetes bound endpoint in ngrok cloud
 type BoundEndpoint struct {
 	Name         string
@@ -68,14 +76,17 @@ func New(config Config) (*Forwarder, error) {
 		config.DialTimeout = 15 * time.Second
 	}
 
-	// Load system root CAs
-	rootCAs, err := x509.SystemCertPool()
-	if err != nil {
-		// Fall back to empty pool if system CAs can't be loaded
-		rootCAs = x509.NewCertPool()
+	// The ingress uses certificates from ngrok's private CA, so trust only
+	// ngrok's CAs here. System roots can't verify it and would only let a
+	// compromised public CA impersonate the ingress.
+	rootCAs := x509.NewCertPool()
+
+	// Trust the ngrok CAs compiled into the binary
+	if !rootCAs.AppendCertsFromPEM(embeddedNgrokCAs) {
+		config.Logger.Error(nil, "No embedded ngrok CA certificates; connections to the ngrok ingress will fail verification")
 	}
 
-	// Load custom ngrok CAs from /etc/ssl/certs/ngrok/ (same as operator)
+	// Load additional ngrok CAs from /etc/ssl/certs/ngrok/ (same as operator)
 	if err := loadNgrokCerts(rootCAs); err != nil {
 		// Log but don't fail - just means no custom certs available
 		config.Logger.V(1).Info("No custom ngrok certs loaded", "error", err)
@@ -130,17 +141,11 @@ func (f *Forwarder) ForwardConnection(ctx context.Context, localConn net.Conn, e
 		tlsConfig.ServerName = hostname
 	}
 	
-	// Note: ngrok's server uses an intermediate CA not in system trust stores
-	// We try to load custom CAs from /etc/ssl/certs/ngrok/ (like the operator does)
-	// If that fails, we fall back to InsecureSkipVerify
-	// This is safe because mTLS client cert authentication is still enforced
-	if tlsConfig.RootCAs == nil || !hasNgrokCerts() {
-		tlsConfig.InsecureSkipVerify = true
-		f.logger.V(1).Info("Using InsecureSkipVerify (no custom ngrok CAs found at /etc/ssl/certs/ngrok/)")
-	} else {
-		f.logger.V(1).Info("Using custom ngrok CAs for server verification")
-	}
-	
+	// Server certificates are always verified against RootCAs (the embedded
+	// ngrok CAs plus any CAs in /etc/ssl/certs/ngrok/).
+	// The client cert sent here authenticates us; it does not authenticate the
+	// server, so verification must never be skipped.
+
 	// Create temporary dialer with updated config
 	dialer := &tls.Dialer{
 		NetDialer: f.tlsDialer.NetDialer,
@@ -211,12 +216,6 @@ func (f *Forwarder) ForwardConnection(ctx context.Context, localConn net.Conn, e
 	}
 
 	return err
-}
-
-// hasNgrokCerts checks if custom ngrok certs directory exists
-func hasNgrokCerts() bool {
-	_, err := os.Stat("/etc/ssl/certs/ngrok/")
-	return err == nil
 }
 
 // loadNgrokCerts loads custom ngrok CA certificates from /etc/ssl/certs/ngrok/

@@ -61,7 +61,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "")
 	flag.Parse()
 	if *showVersion {
-		fmt.Println("ngrokd version 0.3.0")
+		fmt.Println("ngrokd version 0.3.9")
 		os.Exit(0)
 	}
 	logger := funcr.New(func(p, a string) {

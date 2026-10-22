@@ -204,4 +204,4 @@ bound_endpoints:
 
 ## Version
 
-**v0.3.8**
+**v0.3.9**

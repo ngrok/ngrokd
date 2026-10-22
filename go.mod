@@ -2,6 +2,8 @@ module github.com/ngrok/ngrokd
 
 go 1.24.0
 
+toolchain go1.27.3
+
 require (
 	github.com/go-logr/logr v1.4.3
 	google.golang.org/protobuf v1.36.10
